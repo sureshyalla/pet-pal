@@ -188,7 +188,28 @@ def security_event_handler(node_input: str) -> types.Content:
     )
 
 # 4. Human-In-The-Loop Approval Node
-async def hitl_approval(ctx: Context, node_input: types.Content) -> AsyncGenerator[Event, None]:
+def ensure_content(val: Any) -> types.Content:
+    if isinstance(val, types.Content):
+        return val
+    elif isinstance(val, str):
+        return types.Content(role="model", parts=[types.Part.from_text(text=val)])
+    elif isinstance(val, dict):
+        if "parts" in val:
+            parts = []
+            for part in val["parts"]:
+                if isinstance(part, dict) and "text" in part:
+                    parts.append(types.Part.from_text(text=part["text"]))
+                elif isinstance(part, str):
+                    parts.append(types.Part.from_text(text=part))
+                else:
+                    parts.append(part)
+            return types.Content(role=val.get("role", "model"), parts=parts)
+        elif "text" in val:
+            return types.Content(role="model", parts=[types.Part.from_text(text=val["text"])])
+    return types.Content(role="model", parts=[types.Part.from_text(text=str(val))])
+
+async def hitl_approval(ctx: Context, node_input: Any) -> AsyncGenerator[Event, None]:
+    node_input = ensure_content(node_input)
     if ctx.state.get("appointment_pending"):
         if not ctx.resume_inputs or "approve_appointment" not in ctx.resume_inputs:
             details = ctx.state.get("appointment_details", "vet appointment")
@@ -221,8 +242,8 @@ hitl_approval_node = FunctionNode(
     rerun_on_resume=True,
 )
 
-def final_output(node_input: types.Content) -> types.Content:
-    return node_input
+def final_output(node_input: Any) -> types.Content:
+    return ensure_content(node_input)
 
 security_checkpoint_node = FunctionNode(func=security_checkpoint)
 security_event_handler_node = FunctionNode(func=security_event_handler)
